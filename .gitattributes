@@ -1,0 +1,21 @@
+# 保证 shell 脚本在 Windows 上也以 LF 结尾（否则 bash 会报 `bad interpreter`）
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# PowerShell 脚本：固定 CRLF 行尾（Windows 原生习惯）。
+# 编码说明：install.ps1 在仓库里**带 UTF-8 BOM**，这是有意为之 ——
+# Windows PowerShell 5.1 用 ANSI 读取无 BOM 的 .ps1，中文会导致语法错误。
+# 不要用 working-tree-encoding=UTF-8-BOM 转换：它会在 checkout 时剥掉 BOM，
+# 反而让脚本在 Windows 上失效。直接提交带 BOM 的文件内容最可靠。
+*.ps1 text eol=crlf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary

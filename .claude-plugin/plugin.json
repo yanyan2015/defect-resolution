@@ -1,0 +1,30 @@
+{
+  "name": "defect-resolution",
+  "version": "0.1.0",
+  "description": "确认开源软件在某个版本上的 bug 是在哪个版本、哪次提交解决的；也能定位非开源的本地代码",
+  "author": {
+    "name": "yanshuai"
+  },
+  "keywords": [
+    "git",
+    "forensics",
+    "bisect",
+    "blame",
+    "pickaxe",
+    "bug-fix",
+    "root-cause",
+    "attribution",
+    "debugging",
+    "release-triage"
+  ],
+  "license": "MIT",
+  "icon": ".claude-plugin/icon.png",
+  "repository": "https://github.com/yanyan2015/defect-resolution.git",
+  "homepage": "https://github.com/yanyan2015/defect-resolution#readme",
+  "bugs": {
+    "url": "https://github.com/yanyan2015/defect-resolution/issues"
+  },
+  "skills": [
+    "./"
+  ]
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/yanyan2015/defect-resolution/security/advisories/new
+    about: 请**不要**开公开 issue 报告安全问题。走私下披露流程。
+  - name: 使用问题 / 讨论
+    url: https://github.com/yanyan2015/defect-resolution/discussions
+    about: 不确定这是 bug 还是用法问题？来讨论区。

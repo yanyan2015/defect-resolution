@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Forensic scripts regression
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show environment
+        run: |
+          git --version
+          bash --version | head -1
+          python3 --version 2>/dev/null || python --version
+
+      - name: Run regression tests
+        run: bash test/run-tests.sh
+
+      - name: Shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+            scripts/*.sh \
+            test/run-tests.sh
+
+  installer:
+    name: Windows installer (PowerShell)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install to a temp dir (no PATH change)
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "dr-install-test"
+          ./install.ps1 -Target $target -NoPath
+          if ($LASTEXITCODE -ne 0) { throw "installer failed with $LASTEXITCODE" }
+
+      - name: Installed files are present
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "dr-install-test"
+          foreach ($f in @('SKILL.md','scripts\collect.sh','scripts\verify.sh','scripts\version_bisect.sh','references\verification.md')) {
+            $p = Join-Path $target $f
+            if (-not (Test-Path -LiteralPath $p)) { throw "missing: $f" }
+          }
+          Write-Host "all expected files present"
+
+      - name: Installed copy runs the forensics pipeline
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "dr-install-test"
+          $bash = (Get-Command bash.exe -ErrorAction SilentlyContinue).Source
+          if (-not $bash) { $bash = "$env:ProgramFiles\Git\bin\bash.exe" }
+          $script = (Join-Path $target 'scripts\collect.sh') -replace '\\','/'
+          & $bash $script --help
+          if ($LASTEXITCODE -ne 0) { throw "installed script failed to run" }
+          Write-Host "installed scripts execute correctly"
+
+      - name: Uninstall
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "dr-install-test"
+          ./install.ps1 -Target $target -Uninstall -NoPath
+          if (Test-Path -LiteralPath $target) { throw "uninstall did not remove the target" }
+          Write-Host "uninstall works"
+
+  self-check:
+    name: Repository self-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Required files exist
+        run: |
+          for f in README.md README_EN.md DESIGN.md SECURITY.md CONTRIBUTING.md \
+                   CODE_OF_CONDUCT.md CHANGELOG.md LICENSE \
+                   SKILL.md .claude-plugin/plugin.json; do
+            [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+          done
+          echo "all required files present"
+
+      - name: Skill frontmatter is valid
+        run: |
+          [ -f SKILL.md ] || { echo "missing SKILL.md"; exit 1; }
+          head -1 SKILL.md | grep -qx -- '---' || { echo "missing frontmatter"; exit 1; }
+          grep -qE '^name:[[:space:]]*defect-resolution[[:space:]]*$' SKILL.md || { echo "bad name"; exit 1; }
+          grep -qE '^description:' SKILL.md || { echo "missing description"; exit 1; }
+          echo "frontmatter ok"
+
+      - name: Plugin manifest is valid
+        run: |
+          python3 -c "import json;d=json.load(open('.claude-plugin/plugin.json'));assert d['name']=='defect-resolution';print('plugin.json ok')"
+          [ -f .claude-plugin/icon.png ] || { echo "missing icon"; exit 1; }
+          echo "icon ok"
+
+      - name: LICENSE is MIT
+        run: |
+          grep -q 'MIT License' LICENSE || { echo "LICENSE is not MIT"; exit 1; }
+          grep -q 'WITHOUT WARRANTY OF ANY KIND' LICENSE || { echo "LICENSE body incomplete"; exit 1; }
+          echo "license ok"
+
+      - name: No stray artifacts
+        run: |
+          find . -name '__pycache__' -o -name '*.pyc' -o -name '.DS_Store' | grep . && {
+            echo "stray build artifacts found"; exit 1; } || echo "clean"
