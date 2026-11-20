@@ -109,7 +109,7 @@ git clone https://github.com/yanyan2015/defect-resolution.git ~/.claude/skills/d
 
 ### 使用
 
-装好之后直接：
+装好之后直接说：
 
 ```text
 帮我确认这个 bug 是在哪个版本、哪次提交修好的：
