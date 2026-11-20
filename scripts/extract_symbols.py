@@ -1,5 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # extract_symbols.py —— 阶段 2.0：从报错信息中抽取 pickaxe 符号 / grep 关键词 / 文件行号。
+#
+# shebang 用 python3：macOS 系统只带 python3，没有 python 命令；
+# Linux 发行版通常也把 python 指向 python3，但直接执行本脚本时用 python3 更稳。
 #
 # 用法：
 #   extract_symbols.py <error-file|->                 # 带注释的 TSV（供人阅读）

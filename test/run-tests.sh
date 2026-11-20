@@ -26,6 +26,13 @@ WORKROOT=$(mktemp -d)
 cleanup() { rm -rf "$WORKROOT"; }
 trap cleanup EXIT
 
+# python 解释器：macOS 只有 python3（没有 python），Windows 常见 python。
+# 取不到就置空 —— 依赖 python 的断言会跳过而不是误报失败。
+PY=""
+for cand in python3 python; do
+  if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+done
+
 # --- 测试框架 -----------------------------------------------------------------
 CURRENT=""
 
@@ -76,9 +83,9 @@ assert_ranked_below() {
   local i_lo i_hi
   i_lo=$(printf '%s' "$out" | grep -nE "^CAND\|$lower\|"  | head -1 | cut -d: -f1)
   i_hi=$(printf '%s' "$out" | grep -nE "^CAND\|$higher\|" | head -1 | cut -d: -f1)
-  if [ -z "$i_lo" ]; then ok "$msg（$lower 未进入候选表）"; return; fi
-  if [ -z "$i_hi" ]; then bad "$msg（$higher 不在候选表里，无法比较）"; return; fi
-  if [ "$i_lo" -gt "$i_hi" ]; then ok "$msg"; else bad "$msg（$lower 排在了 $higher 前面）"; fi
+  if [ -z "$i_lo" ]; then ok "${msg}（$lower 未进入候选表）"; return; fi
+  if [ -z "$i_hi" ]; then bad "${msg}（$higher 不在候选表里，无法比较）"; return; fi
+  if [ "$i_lo" -gt "$i_hi" ]; then ok "$msg"; else bad "${msg}（$lower 排在了 $higher 前面）"; fi
 }
 
 # 断言候选表里第一个（权重最高）的就是期望的提交
@@ -86,7 +93,7 @@ assert_top_candidate() {
   local out="$1" sha="$2" msg="$3"
   local top
   top=$(printf '%s' "$out" | grep -E '^CAND\|' | head -1 | cut -d'|' -f2)
-  if [ "$top" = "$sha" ]; then ok "$msg"; else bad "$msg (第一候选是 $top，期望 $sha)"; fi
+  if [ "$top" = "$sha" ]; then ok "$msg"; else bad "$msg (第一候选是 ${top}，期望 $sha)"; fi
 }
 
 # --- fixture 工具 -------------------------------------------------------------
@@ -210,11 +217,17 @@ EOF
   git tag v1.0
 
   # 噪声：重排 30 个 helper 行
-  sed -i -E 's/return x \+ ([0-9]+);/return x + \1 + 100;/' src/app.c
+  # 用 awk 而不是 sed -i：BSD sed（macOS）的 -i 把下一个参数当备份后缀，
+  # 且替换文本里的 \n 不解释为换行 —— 两处都会在 macOS 上写坏 fixture。
+  awk '{ if (match($0, /return x \+ [0-9]+;/)) {
+           num = substr($0, RSTART+11, RLENGTH-12)
+           sub(/return x \+ [0-9]+;/, "return x + " num " + 100;")
+         } print }' src/app.c > src/app.c.new && mv src/app.c.new src/app.c
   git commit -qam "style: reformat helper bodies"
 
   # 真修复：只插入 1 行守卫
-  sed -i 's|    strcpy(buf, s);|    if (!s) return 1;\n    strcpy(buf, s);|' src/app.c
+  awk '{ if ($0 == "    strcpy(buf, s);") print "    if (!s) return 1;"
+         print }' src/app.c > src/app.c.new && mv src/app.c.new src/app.c
   git commit -qam "fix: guard NULL before strcpy"
   FIX2=$(git rev-parse HEAD)
   git tag v2.0
@@ -296,8 +309,8 @@ src/foo.c:10: error: 'FOO_H' undeclared (first use in this function)
 See https://github.com/o/r/issues/1234
 fatal error: cannot open file 'config.h': No such file or directory
 EOF
-  SYMS=$(python "$S/extract_symbols.py" /tmp/dr_test_err2.txt --kind syms 2>/dev/null)
-  GREPS=$(python "$S/extract_symbols.py" /tmp/dr_test_err2.txt --kind greps 2>/dev/null)
+  SYMS=$("$PY" "$S/extract_symbols.py" /tmp/dr_test_err2.txt --kind syms 2>/dev/null)
+  GREPS=$("$PY" "$S/extract_symbols.py" /tmp/dr_test_err2.txt --kind greps 2>/dev/null)
 
   printf '%s' "$SYMS" | grep -qF "FOO_H" && ok "syms 抽到了报错符号 FOO_H" || bad "syms 没抽到 FOO_H"
   printf '%s' "$GREPS" | grep -qF "#1234" && ok "greps 抽到了 URL 里的 issue 号" || bad "greps 没抽到 #1234"
@@ -362,7 +375,7 @@ EOF
 
   # 用户的仓库不应被留下任何 worktree
   WT=$(git -C "$REPO" worktree list | wc -l | tr -d ' ')
-  [ "$WT" = "1" ] && ok "没有残留临时 worktree" || bad "残留了 worktree（数量 $WT）"
+  [ "$WT" = "1" ] && ok "没有残留临时 worktree" || bad "残留了 worktree（数量 ${WT}）"
   cd "$ROOT" || exit 1
   mark_done
 fi
@@ -427,7 +440,9 @@ if scenario "syntax_and_lint"; then
   for f in "$S"/*.sh; do
     if bash -n "$f" 2>/dev/null; then ok "bash -n $(basename "$f")"; else bad "bash -n $(basename "$f") 有语法错误"; fi
   done
-  if python -m py_compile "$S/extract_symbols.py" 2>/dev/null; then
+  if [ -z "$PY" ]; then
+    info "没找到 python —— 跳过 extract_symbols.py 的编译检查"
+  elif "$PY" -m py_compile "$S/extract_symbols.py" 2>/dev/null; then
     ok "extract_symbols.py 编译通过"
     rm -rf "$S/__pycache__"
   else
@@ -437,6 +452,54 @@ if scenario "syntax_and_lint"; then
   if grep -qE '^\s*record_log\(\)' "$S/collect.sh"; then
     grep -A20 'record_log()' "$S/collect.sh" | grep -q 'return 0' \
       && ok "record_log 有 return 0 保护" || bad "record_log 缺少 return 0（set -e 陷阱）"
+  fi
+  # 可移植性：BSD sed（macOS）的 -i 把下一个参数当备份后缀，
+  # 且替换文本里的 \n 不解释为换行 —— 两处都会在 macOS 上写坏文件。
+  # 一律用 awk 重写文件。
+  # 匹配真正的命令调用（行首允许空白后是 sed -i），注释与字符串里的不算。
+  if grep -rnE '^[[:space:]]*sed[[:space:]]+-i' "$S" "$ROOT/test" 2>/dev/null; then
+    bad "存在 sed -i（BSD sed 在 macOS 上语义不同）"
+  else
+    ok "没有 sed -i（跨平台安全）"
+  fi
+  # 判据命令不能经 bash -c 传给 git bisect run —— git 内部会用 /bin/sh -c 拼接，
+  # 嵌套引号在各平台 sh 里解析规则不同。改为写脚本文件。
+  if grep -n 'bisect run bash -c' "$S/verify.sh" | grep -vE ':[[:space:]]*#'; then
+    bad "verify.sh 仍用 bisect run bash -c（引号嵌套跨平台不安全）"
+  else
+    ok "bisect 判据不走 bash -c（跨平台安全）"
+  fi
+  # bash 3.2（macOS 系统自带）在 set -u 下，会把变量名后面紧跟的多字节字符的
+  # 首字节当作变量名的一部分 —— "$RC）" 会被当成未绑定的 "RC<乱码>" 而报错。
+  # 变量与多字节文本相邻时一律写成 ${VAR} 显式定界。
+  MBAD=$("$PY" - "$S" "$ROOT/test" <<'PYEOF' 2>/dev/null || true
+import re, sys, glob, os
+if not sys.argv[1:]:
+    sys.exit(0)
+pat = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)')
+hits = []
+for root in sys.argv[1:]:
+    for f in glob.glob(os.path.join(root, '*.sh')):
+        try:
+            lines = open(f, encoding='utf-8').read().split('\n')
+        except Exception:
+            continue
+        for i, line in enumerate(lines, 1):
+            if line.lstrip().startswith('#'):
+                continue
+            for m in pat.finditer(line):
+                e = m.end()
+                if e < len(line) and ord(line[e]) > 127:
+                    hits.append(f"{f}:{i}")
+print(' '.join(hits))
+PYEOF
+)
+  if [ -z "$PY" ]; then
+    info "没找到 python —— 跳过「变量引用定界」检查"
+  elif [ -n "${MBAD}" ]; then
+    bad "变量后紧跟多字节字符（bash 3.2 会误判变量名）: ${MBAD}"
+  else
+    ok "变量引用都做了显式定界（bash 3.2 安全）"
   fi
 mark_done
 fi
@@ -485,7 +548,7 @@ if scenario "version_attribution"; then
   # 关键断言：git describe 会给 v1.0.0（错的，仍带 bug），版本归属必须给 v2.0.0
   DESC=$(git describe --tags --abbrev=0 "$MIDFIX")
   [ "$DESC" = "v1.0.0" ] && info "（前提确认：git describe 确实给的是错误的 v1.0.0）" \
-                          || info "（前提：git describe 给的是 $DESC）"
+                          || info "（前提：git describe 给的是 ${DESC}）"
 
   OUT=$(bash "$S/inspect.sh" "$REPO" "$MIDFIX" --path src/a.c 2>&1)
   assert_contains "$OUT" "首次包含该修复的发布版本: v2.0.0" "首次包含修复的发布版本算对了"
@@ -630,14 +693,24 @@ if scenario "invalid_criteria_hard_fail"; then
 
   OUT=$(bash "$S/version_bisect.sh" "$REPO" v1.0.0 v2.0.0 --path src/a.c --sym '不存在的符号XYZ' 2>&1)
   RC=$?
-  [ $RC -ne 0 ] && ok "全无效判据报错退出（rc=$RC）" || bad "全无效判据静默通过"
+  # 用 ${RC} 显式定界：bash 3.2（macOS）在 set -u 下会把变量名后面紧跟的
+  # 多字节字符首字节当作变量名的一部分，$RC） 会被解析成未绑定的 RC+乱码。
+  if [ "${RC}" -ne 0 ]; then
+    ok "全无效判据报错退出（rc=${RC}）"
+  else
+    bad "全无效判据静默通过"
+  fi
   assert_not_contains "$OUT" "FIX_VERSION=" "不输出错误的 FIX_VERSION"
   assert_contains "$OUT" "全部无效" "给出判据无效的原因"
 
   # --contains 给了修复后才有的内容 → 无效 → 报错
   OUT=$(bash "$S/version_bisect.sh" "$REPO" v1.0.0 v2.0.0 --path src/a.c --contains 'return 2;' 2>&1)
   RC=$?
-  [ $RC -ne 0 ] && ok "--contains 反向判据也报错退出" || bad "--contains 反向判据静默通过"
+  if [ "${RC}" -ne 0 ]; then
+    ok "--contains 反向判据也报错退出"
+  else
+    bad "--contains 反向判据静默通过"
+  fi
   cd "$ROOT" || exit 1
 mark_done
 fi

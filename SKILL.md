@@ -199,6 +199,10 @@ $S/extract_symbols.py <error-file> --kind greps # 一行一个关键词 → coll
 $S/extract_symbols.py <error-file> --kind paths # file:line → 每行 "path<TAB>line"
 ```
 
+> Python 是**可选**依赖 —— 只影响符号抽取器。没有 python 就跳过这步，
+> 直接从报错里人工挑 2–3 个高特异性的符号喂给 `collect.sh --sym`。
+> 需要显式调用时用 `python3`（macOS 只有 `python3`，没有 `python`）。
+
 抽取的优先级（rank 越小越可信）：
 **syms**（用于 pickaxe）：报错中的**引号字面量**（如 `error: 'X' undeclared` 里的 `X`）> 「未定义/未声明/不存在」句式点名的符号 > 文件:行号 > 宏名/函数名 > 通用标识符 > 错误码/errno/信号名。
 **greps**（用于 message 搜索）：issue 号（含 URL 里的 `/issues/1234`）> CVE > 报错原文的多词短语 > 引号整句。

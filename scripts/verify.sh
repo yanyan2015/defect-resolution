@@ -113,7 +113,7 @@ if [ "${#SYMS[@]}" -gt 0 ] && [ "${#PATHS[@]}" -gt 0 ]; then
       a=$(occ "$PTXT" "$s"); b=$(occ "$CTXT" "$s")
       if [ "$a" -gt 0 ] && [ "$b" -eq 0 ]; then verdict="父有/候选无 → 触发条件被消除"; DISAPPEARED=$((DISAPPEARED+1))
       elif [ "$a" -eq 0 ] && [ "$b" -gt 0 ]; then verdict="父无/候选有 → 补上了缺失的东西"; APPEARED=$((APPEARED+1))
-      elif [ "$a" != "$b" ]; then verdict="数量变化 $a→$b"
+      elif [ "$a" != "$b" ]; then verdict="数量变化 ${a}→$b"
       else verdict="数量不变（此符号不是改动点）"; SAME=$((SAME+1)); fi
       printf '   %-46s %8s %8s %s\n' "$s" "$a" "$b" "$verdict"
     done
@@ -219,11 +219,23 @@ if [ -n "$RUNCMD" ] && [ "$NO_RUN" = "0" ]; then
       RES_A="fail(worktree 无法创建)"
     else
       BOUT="$TMP/bisect.out"
+      # 判据写成脚本文件再执行，而不是 `bisect run bash -c "<cmd>"`：
+      # git bisect run 内部会用 /bin/sh -c 拼接整条命令，嵌套引号在不同
+      # 平台的 sh（Linux 的 dash vs macOS 的 bash 3.2 POSIX mode）里解析规则不同，
+      # 判据里的双引号会被吃掉。走脚本文件就没有这一层引号嵌套。
+      CRIT="$TMP/criterion.sh"
+      {
+        printf '#!/usr/bin/env bash\n'
+        printf 'cd "%s" || exit 125\n' "$WT"
+        printf '%s\n' "$RUNCMD"
+      } > "$CRIT"
+      chmod +x "$CRIT" 2>/dev/null || true
       set +e
       {
         git -C "$WT" bisect start "$BB" "$AA"
-        # shellcheck disable=SC2086
-        git -C "$WT" bisect run bash -c "$RUNCMD"
+        # 125 是 git bisect 的"跳过"码，判据自身出错时用它而不是 1，
+        # 免得被误判成"这个提交是坏的"
+        git -C "$WT" bisect run "$CRIT"
       } > "$BOUT" 2>&1
       BRC=$?
       # git 2.4x+ 输出带引号：is the first 'bad' commit；老版本无引号

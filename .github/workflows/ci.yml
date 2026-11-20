@@ -31,9 +31,26 @@ jobs:
           git --version
           bash --version | head -1
           python3 --version 2>/dev/null || python --version
+          # 平台差异排查用：macOS 的 /bin/bash 是 3.2，sed/awk 也是 BSD 版
+          sed --version 2>&1 | head -1 || true
+          awk --version 2>&1 | head -1 || true
 
       - name: Run regression tests
         run: bash test/run-tests.sh
+
+      # 失败时把完整日志留在 Actions 输出里 ——
+      # 否则只能看到"exit 1"，排查平台差异要反复重跑猜。
+      - name: Show test log on failure
+        if: failure()
+        run: |
+          echo "=== 环境 ==="
+          uname -a
+          git --version
+          bash --version | head -1
+          command -v sed awk grep mktemp || true
+          echo
+          echo "=== 失败断言定位 ==="
+          bash test/run-tests.sh 2>&1 | grep -E "✗|失败场景|有失败" || true
 
       - name: Shellcheck
         if: runner.os == 'Linux'

@@ -400,7 +400,7 @@ awk -F'\t' '{w[$1]+=$2; n[$1]++} END{for (s in w) printf "%d\t%d\t%s\n", w[s], n
 
 if [ ! -s "$RANK" ]; then
   printf '（无候选）\n'
-  warn "候选集为空或全部低于 --min-weight=$MINWEIGHT。按 SKILL.md 阶段 2 的顺序放宽：
+  warn "候选集为空或全部低于 --min-weight=${MINWEIGHT}。按 SKILL.md 阶段 2 的顺序放宽：
       去掉 --path → 用 -G 代替 -S → 扩到 <A>^..<B> → 怀疑修复在 merge 中带入 / 文件被重命名 / 问题来自外部依赖"
   printf 'CANDIDATE_COUNT=0\n'
 else
